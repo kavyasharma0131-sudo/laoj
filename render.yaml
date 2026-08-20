@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: araya-dashboard
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OTP_MODE
+        value: test
+      - key: OTP_TTL_SECONDS
+        value: "300"
+      - key: SESSION_SECRET
+        generateValue: true
