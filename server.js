@@ -3,8 +3,39 @@ const {Pool}=require('pg'),session=require('express-session'),pgSession=require(
 const app=express(),PORT=process.env.PORT||10000,DB=process.env.DATABASE_URL,OTP_MODE=(process.env.OTP_MODE||'test').toLowerCase(),TEST_OTP=process.env.TEST_OTP||'123456',TTL=Number(process.env.OTP_TTL_SECONDS||300);
 const pool=DB?new Pool({connectionString:DB,ssl:process.env.NODE_ENV==='production'?{rejectUnauthorized:false}:false}):null;
 app.use(express.json());app.use(express.urlencoded({extended:false}));
-app.use(session(pool?{store:new pgSession({pool,tableName:'user_sessions',createTableIfMissing:true}):{},secret:process.env.SESSION_SECRET||'change-this-secret',resave:false,saveUninitialized:false,cookie:{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:28800000}}));
-app.use(express.static(path.join(__dirname,'public')));
+if (pool) {
+  app.use(
+    session({
+      store: new pgSession({
+        pool: pool,
+        tableName: "user_sessions",
+        createTableIfMissing: true
+      }),
+      secret: process.env.SESSION_SECRET || "development-secret",
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 8 * 60 * 60 * 1000
+      }
+    })
+  );
+} else {
+  app.use(
+    session({
+      secret: process.env.SESSION_SECRET || "development-secret",
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: false
+      }
+    })
+  );
+}
 const limiter=rateLimit({windowMs:15*60*1000,limit:20,standardHeaders:true,legacyHeaders:false});
 async function init(){if(!pool)return;await pool.query(`CREATE TABLE IF NOT EXISTS users(id BIGSERIAL PRIMARY KEY,identifier TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,full_name TEXT NOT NULL DEFAULT 'ARAYA User',mobile TEXT,role TEXT NOT NULL DEFAULT 'member',active BOOLEAN NOT NULL DEFAULT TRUE,created_at TIMESTAMPTZ DEFAULT NOW());CREATE TABLE IF NOT EXISTS otp_challenges(id UUID PRIMARY KEY,user_id BIGINT REFERENCES users(id),identifier TEXT NOT NULL,mode TEXT NOT NULL,expires_at TIMESTAMPTZ NOT NULL,attempts INT DEFAULT 0,verified BOOLEAN DEFAULT FALSE,created_at TIMESTAMPTZ DEFAULT NOW());`);if(process.env.SEED_DEMO_USER==='true'){const q=await pool.query('SELECT id FROM users WHERE identifier=$1',['demo']);if(!q.rowCount)await pool.query('INSERT INTO users(identifier,password_hash,full_name) VALUES($1,$2,$3)',['demo',await bcrypt.hash(process.env.DEMO_PASSWORD||'ChangeMe123!',12),'ARAYA Demo User']);}}
 async function user(id){if(!pool)return null;const q=await pool.query('SELECT * FROM users WHERE identifier=$1',[id]);return q.rows[0]||null;}
